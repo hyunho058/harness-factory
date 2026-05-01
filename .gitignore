@@ -1,0 +1,12 @@
+# OS X
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project Specific
+specs/
+.env

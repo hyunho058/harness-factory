@@ -1,0 +1,5 @@
+{
+  "name": "harness-factory",
+  "version": "0.1.0",
+  "description": "Agent team factory plugin — generates multi-agent team architecture from project codebase"
+}
