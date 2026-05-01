@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "harness-factory-marketplace",
+  "description": "Agent team factory plugin — generates multi-agent team architecture from project codebase",
+  "owner": {
+    "name": "hyunhokim"
+  },
+  "plugins": [
+    {
+      "name": "harness-factory",
+      "description": "Agent team factory — generate-team skill for automated multi-agent architecture design",
+      "category": "productivity",
+      "source": "./plugins/harness-factory"
+    }
+  ]
+}
