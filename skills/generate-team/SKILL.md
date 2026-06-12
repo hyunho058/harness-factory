@@ -30,6 +30,29 @@ A meta-skill that assembles an agent team tailored to a domain or project, defin
 
 ## Workflow
 
+### Phase -1: Routing — Gated Path vs. One-Shot Escape Hatch
+
+**Run this routing check FIRST, before Phase 0.** The default entry point for team generation is now the **gated two-step path** (`design` → approve → `build`), which moves human review cost from O(output) to O(design). The Phase 0–6 one-shot flow below is preserved only as an explicit backward-compatibility escape hatch.
+
+Inspect the user arguments (`$ARGUMENTS`):
+
+**Case A — `--skip-design` is present (one-shot escape hatch):**
+Run the existing Phase 0–6 one-shot flow below **unchanged**. This generates `.claude/agents/`, `.claude/skills/`, and `CLAUDE.md` directly in a single run, with no design spec and no approval gate. This is the legacy behavior, preserved for users who explicitly opt in. Proceed to Phase 0.
+
+**Case B — `--skip-design` is ABSENT (default = gated path):**
+Do **NOT** silently run the one-shot flow. Instead, route the user to the gated path. The gated path is the default because it lets a human review and approve a small design spec *before* any files are materialized — catching design mistakes when they are cheap to fix.
+
+1. Explain the gated path and the three steps:
+   - `/harness-factory:design <team>` — interview (Phase 0–2 reasoning) → writes a reviewable design spec at `specs/<team>/design.md` (`status: draft`), then stops. No `.claude/*` files are written.
+   - Review and edit `specs/<team>/design.md`, then run `scripts/approve <team>` — sets `status: approved` and freezes a checksum of the spec.
+   - `/harness-factory:build <team>` — reads only the approved spec and generates `.claude/agents/`, `.claude/skills/`, and `CLAUDE.md`. Rejects if the spec is missing, not approved, or was tampered with after approval.
+2. Tell the user that if they want the old one-shot behavior (generate everything in one run, no gate), they can re-invoke with `--skip-design`.
+3. Use `AskUserQuestion` to let the user choose between:
+   - **"Go gated (recommended)"** — stop here and point them to run `/harness-factory:design <team>`. Do **not** generate any `.claude/*` files in this invocation.
+   - **"One-shot now"** — proceed to Phase 0 and run the one-shot flow below (equivalent to having passed `--skip-design`).
+
+   The recommended default is the gated path. Only fall through to Phase 0 if the user explicitly chooses one-shot.
+
 ### Phase 0: Current State Audit
 
 When the skill is triggered, first check the existing harness state in the current working directory (CWD). Phase 0 always scans the CWD — the user must be in the target project directory before running the command.

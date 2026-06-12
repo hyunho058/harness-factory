@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+#
+# approve — freeze a design.md (the PRODUCER side of the checksum gate)
+# =============================================================================
+#
+# PURPOSE
+#   A human edits specs/<team>/design.md freely, then runs `approve <team>` to:
+#     1. set `status: approved` in the frontmatter,
+#     2. freeze the canonical sha256 into the `checksum:` frontmatter field, and
+#     3. print a change summary of what is being frozen.
+#
+#   The digest is produced by the SIBLING `checksum.sh` — the ONE shared script
+#   the consumer (`build`) also calls — so a false approve↔build mismatch on an
+#   unchanged spec is structurally 0. NEVER hand-roll hashing here (spec D3,
+#   R3.1, R3.2, R3.3; Constraints "체크섬 정규화").
+#
+# USAGE
+#   approve <team>
+#     operates on specs/<team>/design.md relative to the CURRENT working
+#     directory (the user's project). Missing file -> stderr + non-zero exit.
+#
+# ORDER OF OPERATIONS (correctness-critical)
+#   checksum.sh excludes `status:` and `checksum:` from the hashed body, so the
+#   order of the status-flip vs. hashing does not change the digest. We still
+#   write `status: approved` FIRST, then hash, then write `checksum:`, so the
+#   persisted file is internally consistent at every step.
+#
+# PORTABILITY
+#   macOS / darwin (BSD) compatible. In-place edits are done via a temp file +
+#   mv to avoid `sed -i ''` portability gotchas.
+#
+set -euo pipefail
+
+err()  { printf '%s\n' "approve: $*" >&2; }
+
+# --- resolve sibling checksum.sh by THIS script's own directory --------------
+# (not by CWD — approve runs from the user's project dir, the script lives in
+#  the plugin.)
+DIR="$(cd "$(dirname "$0")" && pwd)"
+CHECKSUM="$DIR/checksum.sh"
+
+# --- argument validation -----------------------------------------------------
+if [ "$#" -ne 1 ]; then
+  err "usage: approve <team>"
+  exit 2
+fi
+
+team="$1"
+design_path="specs/$team/design.md"
+
+if [ ! -e "$design_path" ]; then
+  err "design spec not found: $design_path"
+  err "run the design step first to produce specs/$team/design.md"
+  exit 1
+fi
+if [ ! -f "$design_path" ]; then
+  err "not a regular file: $design_path"
+  exit 1
+fi
+
+if [ ! -x "$CHECKSUM" ]; then
+  err "sibling checksum.sh not found or not executable: $CHECKSUM"
+  exit 1
+fi
+
+# --- capture prior state (for the change summary) ----------------------------
+# Read status: / checksum: ONLY from inside the leading frontmatter block, so a
+# body line beginning with "status:" cannot be mistaken for the meta field.
+prior_status=""
+prior_checksum=""
+in_fm=0
+fm_lineno=0
+while IFS= read -r raw || [ -n "$raw" ]; do
+  line="${raw%$'\r'}"
+  fm_lineno=$((fm_lineno + 1))
+  if [ "$fm_lineno" -eq 1 ] && [ "$line" = "---" ]; then
+    in_fm=1
+    continue
+  fi
+  if [ "$in_fm" -eq 1 ]; then
+    if [ "$line" = "---" ]; then
+      break
+    fi
+    case "$line" in
+      status*:*)
+        v="${line#*:}"; v="${v# }"; v="${v%% *}"
+        prior_status="$v" ;;
+      checksum*:*)
+        v="${line#*:}"; v="${v# }"; v="${v%% *}"
+        prior_checksum="$v" ;;
+    esac
+  fi
+done < "$design_path"
+
+# --- count agents & skills from the body sections ----------------------------
+# Counts list-item entries ("- " or "* ") under the `## Agents` / `## Skills`
+# heading, falling back to a generous interpretation. We count top-level bullet
+# lines within each section as the entry count for the summary.
+count_section_items() {
+  # $1 = section heading text (e.g. "Agents")
+  awk -v sec="$1" '
+    BEGIN { in_sec = 0; n = 0 }
+    /^##[[:space:]]/ {
+      # entering a new H2 section: are we entering ours?
+      hdr = $0
+      sub(/^##[[:space:]]+/, "", hdr)
+      sub(/[[:space:]]+$/, "", hdr)
+      in_sec = (hdr == sec) ? 1 : 0
+      next
+    }
+    {
+      if (in_sec) {
+        line = $0
+        # count a top-level bullet item
+        if (line ~ /^[[:space:]]*[-*][[:space:]]+/) n++
+      }
+    }
+    END { print n }
+  ' "$design_path"
+}
+
+agent_count="$(count_section_items "Agents")"
+skill_count="$(count_section_items "Skills")"
+
+# --- (1) set status: approved in the frontmatter -----------------------------
+# Operate ONLY inside the leading frontmatter block. Replace the status line in
+# place; if no status line exists in the frontmatter, insert one.
+tmp="$(mktemp "${TMPDIR:-/tmp}/approve.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+awk '
+  BEGIN { in_fm = 0; seen_fm = 0; wrote_status = 0 }
+  {
+    line = $0
+    if (NR == 1 && line == "---") { in_fm = 1; seen_fm = 1; print; next }
+    if (in_fm) {
+      if (line == "---") {
+        # closing frontmatter — make sure status was written
+        if (!wrote_status) { print "status: approved" }
+        in_fm = 0
+        print
+        next
+      }
+      if (line ~ /^[ \t]*status[ \t]*:/) {
+        print "status: approved"
+        wrote_status = 1
+        next
+      }
+      print
+      next
+    }
+    print
+  }
+' "$design_path" > "$tmp"
+
+mv "$tmp" "$design_path"
+trap - EXIT
+
+# --- (2) compute the canonical digest via the sibling script -----------------
+# checksum.sh hashes the body with status/checksum EXCLUDED, so this digest is
+# identical to what `build` will recompute. We computed it AFTER flipping status
+# (order-independent, but keeps the file consistent on disk).
+digest="$("$CHECKSUM" "$design_path")"
+
+if [ -z "$digest" ]; then
+  err "checksum.sh produced an empty digest for $design_path"
+  exit 1
+fi
+
+# --- write the digest into the checksum: frontmatter field -------------------
+tmp="$(mktemp "${TMPDIR:-/tmp}/approve.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+awk -v digest="$digest" '
+  BEGIN { in_fm = 0; wrote_ck = 0 }
+  {
+    line = $0
+    if (NR == 1 && line == "---") { in_fm = 1; print; next }
+    if (in_fm) {
+      if (line == "---") {
+        if (!wrote_ck) { print "checksum: " digest }
+        in_fm = 0
+        print
+        next
+      }
+      if (line ~ /^[ \t]*checksum[ \t]*:/) {
+        print "checksum: " digest
+        wrote_ck = 1
+        next
+      }
+      print
+      next
+    }
+    print
+  }
+' "$design_path" > "$tmp"
+
+mv "$tmp" "$design_path"
+trap - EXIT
+
+# --- (3) change summary (R3.3) ----------------------------------------------
+short="${digest:0:12}"
+
+printf '%s\n' "Approved: $team"
+printf '%s\n' "  spec:     $design_path"
+printf '%s\n' "  status:   approved"
+printf '%s\n' "  agents:   $agent_count"
+printf '%s\n' "  skills:   $skill_count"
+printf '%s\n' "  checksum: $short  (frozen)"
+
+if [ -n "$prior_checksum" ] && [ "$prior_checksum" != "$digest" ]; then
+  printf '%s\n' "  note:     re-approving (spec changed since last approval; was ${prior_checksum:0:12})"
+elif [ -n "$prior_checksum" ] && [ "$prior_checksum" = "$digest" ]; then
+  printf '%s\n' "  note:     re-approving (spec unchanged since last approval)"
+fi

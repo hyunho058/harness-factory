@@ -29,12 +29,32 @@ claude plugin install harness-factory
 
 ## Usage
 
+The default flow is **gated**: a human reviews and approves a small design spec *before* any files are generated. This moves review cost from O(output) to O(design).
+
 ```
-/generate-team
-/generate-team [project description]
+# 1. Design — interview, then write a reviewable spec and stop
+/harness-factory:design <team>
+
+# 2. Review specs/<team>/design.md, then approve (freezes a checksum)
+scripts/approve <team>
+
+# 3. Build — reads only the approved spec and generates the harness
+/harness-factory:build <team>
 ```
 
-Leave the argument empty to let the skill scan the current working directory automatically.
+`design` runs the interview (audit → domain analysis → architecture design) and writes `specs/<team>/design.md` with `status: draft`, then stops — no `.claude/*` files are written. After you edit and approve the spec, `build` reads only the approved spec and generates `.claude/agents/`, `.claude/skills/`, and `CLAUDE.md`. `build` hard-rejects if the spec is missing, not approved, or was tampered with after approval (checksum mismatch).
+
+### One-shot escape hatch (`--skip-design`)
+
+The legacy single-run flow is preserved as an explicit opt-out:
+
+```
+/generate-team --skip-design [project description]
+```
+
+With `--skip-design`, the original Phase 0–6 flow runs in one pass and writes `.claude/*` directly, with no design spec and no approval gate.
+
+Running `/generate-team` **without** `--skip-design` does not silently generate anything — it explains the gated path above and routes you to `/harness-factory:design <team>`. Leave the project description empty to let the skill scan the current working directory automatically.
 
 ## Practical Example: Generating a UI Component Team
 
@@ -77,17 +97,19 @@ The factory audits the `.claude/` folder, leaves existing agents untouched, crea
 
 ## How it works
 
-The `generate-team` skill runs six phases:
+The same six phases of reasoning are split across the gated flow at the seam between *decisions* (Phase 0–2) and *materialization* (Phase 3–6):
 
-| Phase | What happens |
-|-------|-------------|
-| 0: Audit | Reads existing agents/skills; branches into new build, extend, or maintenance |
-| 1: Domain Analysis | Identifies task types, tech stack, and user skill level |
-| 2: Architecture Design | Selects execution mode (agent team / sub-agent / hybrid) and team pattern |
-| 3: Agent Definitions | Writes `.claude/agents/{name}.md` for every agent |
-| 4: Skill Generation | Writes `.claude/skills/{name}/SKILL.md` with aggressive trigger descriptions |
-| 5: Orchestrator | Generates the orchestrator skill and CLAUDE.md pointers |
-| 6: Testing | Runs each agent/skill through QA, iterates on failures |
+| Phase | What happens | Stage |
+|-------|-------------|-------|
+| 0: Audit | Reads existing agents/skills; branches into new build, extend, or maintenance | design |
+| 1: Domain Analysis | Identifies task types, tech stack, and user skill level | design |
+| 2: Architecture Design | Selects execution mode (agent team / sub-agent / hybrid) and team pattern | design |
+| 3: Agent Definitions | Writes `.claude/agents/{name}.md` for every agent | build |
+| 4: Skill Generation | Writes `.claude/skills/{name}/SKILL.md` with aggressive trigger descriptions | build |
+| 5: Orchestrator | Generates the orchestrator skill and CLAUDE.md pointers | build |
+| 6: Testing | Runs each agent/skill through QA, iterates on failures | build |
+
+In the **gated path** (default), `design` runs the decision phases (0–2) and emits `specs/<team>/design.md`; after human approval (`scripts/approve`), `build` runs the materialization phases (3–6) from the approved spec alone. The `--skip-design` escape hatch runs all six phases in one pass with no gate.
 
 All agents use `model: opus` for maximum reasoning quality.
 
