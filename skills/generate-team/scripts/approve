@@ -93,9 +93,10 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 done < "$design_path"
 
 # --- count agents & skills from the body sections ----------------------------
-# Counts list-item entries ("- " or "* ") under the `## Agents` / `## Skills`
-# heading, falling back to a generous interpretation. We count top-level bullet
-# lines within each section as the entry count for the summary.
+# Each agent/skill is an H3 subsection (`### <name>`) under the `## Agents` /
+# `## Skills` heading; its fields are bullet lines. Count the H3 subsections, not
+# the field bullets. An H2 boundary ends the section (so we never count H3s from a
+# later section).
 count_section_items() {
   # $1 = section heading text (e.g. "Agents")
   awk -v sec="$1" '
@@ -109,11 +110,7 @@ count_section_items() {
       next
     }
     {
-      if (in_sec) {
-        line = $0
-        # count a top-level bullet item
-        if (line ~ /^[[:space:]]*[-*][[:space:]]+/) n++
-      }
+      if (in_sec && $0 ~ /^###[[:space:]]+/) n++
     }
     END { print n }
   ' "$design_path"
