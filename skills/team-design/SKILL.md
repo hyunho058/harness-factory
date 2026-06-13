@@ -178,21 +178,71 @@ Delete the template's guidance comments as you fill each section.
 
 ---
 
-## Step 4 — STOP and guide (R1.2)
+## Step 4 — Present the design for review (R1.2)
 
-After writing `specs/<team>/design.md`, **STOP**. Do not proceed to generation.
+After writing `specs/<team>/design.md`, **do not generate anything**. Surface the
+design so the human can review it *in chat* — they should not have to open an editor
+unless they want to.
 
-**Explicitly do NOT** create or modify `.claude/agents/`, `.claude/skills/`, or
-`CLAUDE.md`. Producing any harness artifact here defeats the gate — the human has not
-reviewed the design yet. The next file to touch on disk is decided by `build`, after
-approval.
+**Hard rule still holds:** create or modify NOTHING under `.claude/agents/`,
+`.claude/skills/`, or `CLAUDE.md` here. The only file that exists so far is the draft
+spec; `build` decides the next disk write, after approval.
 
-Print this next-step guidance to the user verbatim (substitute `<team>`):
+Print a concise design summary to the user:
 
 ```
-Design spec written: specs/<team>/design.md (status: draft)
-No .claude/* files were generated — this is by design (review-before-build gate).
+Design spec written: specs/<team>/design.md (status: draft) — no .claude/* generated.
 
+  Team:       <team>
+  Agents (N): <name> — <one-line role>; <name> — <one-line role>; ...
+  Skills (N): <name> (owner: <agent>); ...
+  Invariants: <the 1-3 most important gates this team enforces>
+  Will build: .claude/agents/*, .claude/skills/*/SKILL.md, CLAUDE.md
+
+Full spec: specs/<team>/design.md
+```
+
+## Step 5 — Approval gate (in-chat — removes the manual terminal step)
+
+Approval is still an explicit human act and the checksum still freezes — but the
+human shouldn't have to type a shell command. Offer the choice with `AskUserQuestion`:
+
+```
+question: "Review the design above. How do you want to proceed?"
+options:
+  - "Approve now"            — freeze the checksum so it's buildable (I run approve for you)
+  - "Revise — I'll say what" — tell me the changes; I edit the spec, then re-present
+  - "I'll review the file"   — stop; I'll print the manual approve/build steps
+```
+
+**On "Approve now"** (the user has reviewed the summary; this is an informed approval):
+
+1. Run the shared approve helper from the project CWD:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/generate-team/scripts/approve" <team>
+   ```
+2. Confirm back to the user: `status: approved`, checksum frozen (show the short
+   digest from the helper's summary).
+3. Point to build — **do not run build yourself.** Build is the separate consumer
+   that owns generation; design's job ends at a frozen, buildable spec:
+   ```
+   Approved + checksum frozen. Build the harness with:
+       /harness-factory:build <team>
+   (or just ask me to build it)
+   ```
+
+   **Integrity note:** approve only edits the spec's `status`/`checksum` frontmatter —
+   design still wrote nothing under `.claude/` (R1.2 holds). The gate is unchanged: if
+   the spec is edited after this, `build` rejects on checksum mismatch (re-approve needed).
+
+**On "Revise — I'll say what":** ask what to change, edit `specs/<team>/design.md` in
+place (re-validate against the schema), then go back to Step 4 (re-present summary) and
+this choice. Loop until the user approves or picks "I'll review the file."
+
+**On "I'll review the file":** stop and print the manual next-steps verbatim
+(substitute `<team>`), then end the turn:
+
+```
 Next steps:
   1. Review and edit specs/<team>/design.md until the architecture is right.
   2. Approve it (freezes a checksum):
@@ -201,4 +251,4 @@ Next steps:
        /harness-factory:build <team>
 ```
 
-Then end the turn. The design phase is complete.
+After approval (or the manual-path guidance), end the turn. The design phase is complete.

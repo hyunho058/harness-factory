@@ -44,6 +44,8 @@ scripts/approve <team>
 
 `design` runs the interview (audit → domain analysis → architecture design) and writes `specs/<team>/design.md` with `status: draft`, then stops — no `.claude/*` files are written. After you edit and approve the spec, `build` reads only the approved spec and generates `.claude/agents/`, `.claude/skills/`, and `CLAUDE.md`. `build` hard-rejects if the spec is missing, not approved, or was tampered with after approval (checksum mismatch).
 
+**You don't have to open a terminal.** When `design` finishes it presents the design in chat and offers **Approve now** / **Revise (tell me changes)** / **Review the file myself**. Picking *Approve now* runs the `approve` helper for you (freezing the checksum) so step 2 above becomes a single click; picking *Revise* lets you describe edits conversationally and Claude updates the spec, then re-presents it. The checksum gate is unchanged either way — approval is still an explicit act, and `build` still rejects a spec edited after approval.
+
 ### One-shot escape hatch (`--skip-design`)
 
 The legacy single-run flow is preserved as an explicit opt-out:
