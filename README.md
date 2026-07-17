@@ -167,6 +167,10 @@ harness-factory/
 
 `plugins/harness-factory` is a **self-referential symlink** pointing at the repository root (`-> ../`). It lets the plugin resolve under a `plugins/<name>` path without duplicating any files. Symlinks can be fragile on **Windows** checkouts: Git only materializes them when symlink support is enabled (`git config core.symlinks true`, plus OS-level permission such as Developer Mode). Windows users who see a plain text file where the link should be may need to enable symlink support and re-checkout. Do **not** delete the symlink — it is intentional.
 
+### Compatibility note — agent-team execution mode requires team primitives
+
+The generator's **default** execution mode is *agent team*, which coordinates via the `TeamCreate` / `TeamDelete` / `SendMessage` / `TaskCreate` primitives. These are **not present in every Claude Code version or session** (availability can depend on the version and on whether FleetView is enabled). *Sub-agent* mode uses only the `Agent` tool, which is always available. **If your target environment does not expose `TeamCreate`, design teams in sub-agent mode** — the harness is still correct, just without live inter-agent messaging. The default is intentionally left as team (it is better where the primitives exist); switching it project-wide should follow an actual measurement of primitive availability in the target version, not an assumption.
+
 ## harness-ops integration
 
 If [harness-ops](https://github.com/hyunho058/harness-ops) is installed, you can also trigger this skill via:

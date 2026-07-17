@@ -99,6 +99,12 @@ a schema violation — build rejects it.
 How the agents run together: `team`, `sub` (subagent fan-out), or `hybrid`. State
 the orchestration pattern. (Adding *new* modes is out of scope for this schema.)
 
+> **Primitive availability.** `team` depends on `TeamCreate` / `TeamDelete` /
+> `SendMessage` / `TaskCreate`, which are not present in every Claude Code version
+> or session. If the target environment lacks them — or you are unsure — declare
+> `sub`; it uses only the always-available `Agent` tool. See
+> `orchestrator-template.md` and `agent-design-patterns.md` → "Execution Modes".
+
 ### 6. `## Invariants/Gates`
 
 **This is the point of the gate.** Record the invariants the generated team

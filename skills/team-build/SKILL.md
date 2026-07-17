@@ -256,6 +256,14 @@ Following generate-team Phase 5:
 - Build the orchestrator skill in the shape dictated by `## Execution Mode`
   (team → `TeamCreate`/`TaskCreate` self-coordination; sub → `Agent` fan-out;
   hybrid → per-phase modes).
+  - **Team-mode primitive note:** when `## Execution Mode` is `team`, the
+    orchestrator uses `TeamCreate`/`SendMessage`/`TaskCreate` — primitives not
+    present in every Claude Code version/session. Materialize the mode the spec
+    declares (do **not** silently change it), but have the generated orchestrator
+    state the requirement and name `Agent` sub-agent fan-out as the run-time
+    fallback if the primitives are absent. See
+    [`../generate-team/references/agent-design-patterns.md`](../generate-team/references/agent-design-patterns.md)
+    → "Execution Modes".
 - Materialize `## Invariants/Gates` and `## Escalation Rules` into the
   orchestrator's gate/error-handling logic so the team actually enforces them.
 - Write the **CLAUDE.md harness pointer** (generate-team 5-4 template): trigger

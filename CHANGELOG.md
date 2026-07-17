@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generate-team` skills, `scripts/`, `assets/`, `references/`, `.claude-plugin/`,
   and the `plugins/harness-factory` symlink), with a Windows symlink caveat and a
   corrected description of the no-flag Phase -1 routing.
+- Documented that agent-team execution mode requires the `TeamCreate` /
+  `TeamDelete` / `SendMessage` / `TaskCreate` primitives — which are not present in
+  every Claude Code version/session — and made **sub-agent** the explicit graceful
+  fallback across the generator (`agent-design-patterns.md`,
+  `orchestrator-template.md`, the `generate-team` / `team-build` skills,
+  `design-schema.md`, and the README). The team **default is unchanged**; flipping
+  it project-wide is deferred until primitive availability is measured in the
+  target version (ANALYSIS.md ④, safe slice — the measurement itself is out of
+  scope here).
 
 ### Fixed
 - `approve` no longer reports a false "Approved / frozen" success when run on a

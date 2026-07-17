@@ -96,6 +96,16 @@ When the skill is triggered, first check the existing harness state in the curre
 2. Choose sub-agent only when team communication is structurally unnecessary (result delivery only) and overhead outweighs benefit
 3. Consider hybrid when phases differ significantly — specify each phase's execution mode in the orchestrator
 
+> **Availability preflight (do this before defaulting to team).** Agent-team mode
+> depends on the `TeamCreate` / `TeamDelete` / `SendMessage` / `TaskCreate`
+> primitives, which are **not present in every Claude Code version or session**
+> (availability can depend on version and on FleetView). Before an orchestrator
+> defaults to `team`, confirm the target environment exposes `TeamCreate` (e.g.
+> check the session tool list). **If the primitives are unavailable, use Sub-agent
+> mode** — it uses only the always-available `Agent` tool and is the safe fallback.
+> Do *not* silently flip the project-wide default to `sub` without that check;
+> scope the fallback to environments where team is proven absent.
+
 > For detailed comparison tables and per-pattern decision trees, see `references/agent-design-patterns.md` under "Execution Modes".
 
 #### 2-2. Architecture Pattern Selection
