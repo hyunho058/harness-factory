@@ -380,6 +380,54 @@ assert_eq "6c tampered: status is still 'approved' (so only G3 can catch it)" ap
 assert_ne "6c tampered: frozen checksum != recomputed -> build G3 rejects" "$G_FROZEN" "$("$CHECKSUM" "$G_TAMP")"
 
 # =============================================================================
+section "7. Section provenance — section-checksum.sh determinism (rebuild key ①)"
+# =============================================================================
+# The rebuild key (spec §D6/§R5.3/§R5.5): build stamps each artifact with the
+# sha256 of the spec SECTION that produced it, and on a re-run recomputes it to
+# decide PRESERVE (equal) vs UPDATE (differ) — deterministically, with no LLM
+# re-render. These pin that determinism + section-granularity. SKIP if absent.
+SECTIONSUM="$SCRIPTS/section-checksum.sh"
+if [ -x "$SECTIONSUM" ]; then
+  S_SPEC="$WORK/sec/specs/s/design.md"; write_valid_design "$S_SPEC"
+
+  # 7a determinism: same section hashed twice -> identical
+  SH1="$("$SECTIONSUM" "$S_SPEC" agent:reviewer 2>/dev/null)"
+  SH1b="$("$SECTIONSUM" "$S_SPEC" agent:reviewer 2>/dev/null)"
+  assert_nonempty "7a-pre section-checksum.sh emits a digest" "$SH1"
+  assert_eq "7a agent:reviewer hashes identically across runs (deterministic)" "$SH1" "$SH1b"
+
+  # 7b section-granularity: edit reviewer's block -> reviewer changes, builder does NOT
+  SB1="$("$SECTIONSUM" "$S_SPEC" agent:builder 2>/dev/null)"
+  sed 's/review things/review things CAREFULLY/' "$S_SPEC" > "$WORK/sec/e.tmp" && mv "$WORK/sec/e.tmp" "$S_SPEC"
+  SH2="$("$SECTIONSUM" "$S_SPEC" agent:reviewer 2>/dev/null)"
+  SB2="$("$SECTIONSUM" "$S_SPEC" agent:builder 2>/dev/null)"
+  assert_ne "7b editing reviewer's block changes agent:reviewer digest (UPDATE)" "$SH1" "$SH2"
+  assert_eq "7b editing reviewer's block leaves agent:builder digest untouched (PRESERVE, section-granular)" "$SB1" "$SB2"
+
+  # 7c orchestrator selector works and reacts to an Execution Mode edit
+  write_valid_design "$S_SPEC"   # reset
+  SO1="$("$SECTIONSUM" "$S_SPEC" orchestrator 2>/dev/null)"
+  assert_nonempty "7c orchestrator selector yields a digest (ExecMode+Invariants+Escalation)" "$SO1"
+  sed 's/subagent fan-out/team self-coordination/' "$S_SPEC" > "$WORK/sec/e2.tmp" && mv "$WORK/sec/e2.tmp" "$S_SPEC"
+  SO2="$("$SECTIONSUM" "$S_SPEC" orchestrator 2>/dev/null)"
+  assert_ne "7c editing ## Execution Mode changes the orchestrator digest" "$SO1" "$SO2"
+
+  # 7d CRLF + trailing-ws on the section must NOT false-mismatch (reuses checksum.sh)
+  write_valid_design "$S_SPEC"   # reset (LF/clean)
+  SH_CLEAN="$("$SECTIONSUM" "$S_SPEC" agent:reviewer 2>/dev/null)"
+  S_CRLF="$WORK/sec/crlf.md"
+  awk '{ printf "%s   \r\n", $0 }' "$S_SPEC" > "$S_CRLF"
+  SH_CRLF="$("$SECTIONSUM" "$S_CRLF" agent:reviewer 2>/dev/null)"
+  assert_eq "7d section digest is CRLF/trailing-ws stable (false-mismatch = 0)" "$SH_CLEAN" "$SH_CRLF"
+
+  # 7e errors: bad selector / missing agent -> non-zero
+  "$SECTIONSUM" "$S_SPEC" bogus >/dev/null 2>&1;       assert_ne "7e bad selector exits non-zero" 0 "$?"
+  "$SECTIONSUM" "$S_SPEC" agent:ghost >/dev/null 2>&1; assert_ne "7e missing agent exits non-zero" 0 "$?"
+else
+  skip "7a-7e section-checksum.sh determinism/granularity (section-checksum.sh not present yet)"
+fi
+
+# =============================================================================
 # summary
 # =============================================================================
 TOTAL=$((PASS + FAIL + SKIP + XFAIL))
@@ -393,7 +441,7 @@ if [ "$XFAIL" -gt 0 ]; then
   printf '#           each auto-flips to a real PASS once the underlying script is fixed.\n'
 fi
 if [ "$SKIP" -gt 0 ]; then
-  printf '#   SKIP  = validate.sh cases, pending Agent A adding scripts/validate.sh.\n'
+  printf '#   SKIP  = optional-script cases (validate.sh / section-checksum.sh) not present yet.\n'
 fi
 printf '# ------------------------------------------------------------\n'
 

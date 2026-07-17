@@ -137,8 +137,9 @@ harness-factory/
 │       ├── SKILL.md              # Core 6-phase logic + Phase -1 router + --skip-design one-shot escape hatch
 │       ├── scripts/
 │       │   ├── approve           # Producer side of the checksum gate — sets status: approved, freezes sha256
-│       │   ├── checksum.sh       # Canonical digest, shared: approve AND build call the SAME script (0 false mismatch)
-│       │   └── validate.sh       # Shared structural validation — approve (pre-freeze) + build (post-gate) [added by improvement work]
+│       │   ├── checksum.sh       # Canonical whole-spec digest, shared: approve AND build call the SAME script (0 false mismatch)
+│       │   ├── validate.sh       # Shared structural validation — approve (pre-freeze) + build (post-gate) [added by improvement work]
+│       │   └── section-checksum.sh # Per-section digest (reuses checksum.sh) — build's deterministic rebuild key [added by improvement work]
 │       ├── assets/
 │       │   └── design-template.md # design.md skeleton emitted by the design phase
 │       └── references/
@@ -160,7 +161,7 @@ harness-factory/
     └── harness-factory -> ../    # Self-referential symlink to the repo root (see the Compatibility note below)
 ```
 
-> Entries marked *[added by improvement work]* (`validate.sh`, `tests/`, `.github/workflows/`) land alongside this documentation refresh. `specs/` is otherwise git-ignored; only `specs/gated-team-generation/` is tracked, so the citations in the scripts and references stay resolvable for installed users.
+> Entries marked *[added by improvement work]* (`validate.sh`, `section-checksum.sh`, `tests/`, `.github/workflows/`) land alongside this documentation refresh. `section-checksum.sh` stamps each generated artifact with a provenance marker (`<!-- generated-from: … @ sha256:… -->`) so a re-build's preserve-vs-regenerate decision is deterministic rather than an LLM re-render comparison. `specs/` is otherwise git-ignored; only `specs/gated-team-generation/` is tracked, so the citations in the scripts and references stay resolvable for installed users.
 
 ### Compatibility note — the `plugins/harness-factory` symlink
 

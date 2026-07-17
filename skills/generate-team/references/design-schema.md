@@ -149,3 +149,10 @@ validates the *shape* of an approved spec; the gate validates its *authority*.
 
 - `assets/design-template.md` — fillable instance `design` copies and fills.
 - `scripts/checksum.sh` — shared normalization for approve (freeze) and build (verify).
+- `scripts/section-checksum.sh` — per-section digest (reuses `checksum.sh`). At
+  build time each generated artifact is stamped with a provenance marker
+  `<!-- generated-from: <selector> @ sha256:… -->` recording the digest of the
+  spec section it came from; on a re-build that marker makes the
+  preserve-vs-regenerate decision deterministic (see
+  `../../team-build/references/merge.md`). The marker lives in the artifact, not
+  in this spec, so it never affects the checksum gate (R5.4).

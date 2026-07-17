@@ -98,3 +98,23 @@ LF/whitespace, sha256," the two descriptions would inevitably drift — a stray
 `tr` here, a different `sed` there — and reintroduce the false-mismatch risk the
 gate is meant to eliminate. Centralizing the contract in one executable means
 the producer and consumer are, by construction, computing the same function.
+
+## Section-level reuse — `section-checksum.sh` (rebuild determinism)
+
+The same normalization is reused, unchanged, for a *different* determinism
+problem: deciding on a re-run whether the spec section that produced a given
+`.claude/*` artifact has changed since the last build (spec §D6 / §R5.3 / §R5.5).
+[`scripts/section-checksum.sh`](../scripts/section-checksum.sh) extracts **one**
+section of `design.md` (`agent:<name>`, `skill:<name>`, or `orchestrator`) and
+hashes it by piping the extracted bytes through the **literal `checksum.sh`** —
+not a copy of its rules. So a section digest is normalized byte-for-byte
+identically to the whole-spec gate, and the stamp-time↔compare-time false
+mismatch is 0 for the same structural reason.
+
+`build` stamps that digest into each generated artifact as a provenance marker
+(`<!-- generated-from: <selector> @ sha256:… -->`) and, on a re-run, recomputes
+and compares it (see
+[`../../team-build/references/merge.md`](../../team-build/references/merge.md)).
+This marker lives in the artifact, **not** in `design.md`, so it never enters the
+whole-spec digest above and the checksum **gate** (G3 / §R5.4, scope = spec only)
+is unaffected.

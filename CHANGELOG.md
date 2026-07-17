@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared `validate.sh` helper (`skills/generate-team/scripts/`) that structurally
   checks a `design.md` — invoked by `approve` before freezing and by `build` after
   the checksum gate, mirroring how both sides already share `checksum.sh`.
+- Shared `section-checksum.sh` helper (`skills/generate-team/scripts/`) that hashes
+  **one** `design.md` section (`agent:<name>` / `skill:<name>` / `orchestrator`) by
+  reusing the literal `checksum.sh` normalization. `build` stamps each generated
+  artifact with a provenance marker `<!-- generated-from: <selector> @ sha256:… -->`
+  and, on a re-build, recomputes it to decide **preserve vs. regenerate
+  deterministically** — replacing the old LLM re-render comparison that
+  mis-classified untouched agents as changed (spec §D6/§R5.3/§R5.5). The marker
+  lives in the artifact, never in `design.md`, so the checksum gate (§R5.4) is
+  unaffected. Section-provenance regression tests added to `tests/gate_test.sh`.
 - Gate regression tests under `tests/` plus a CI workflow under `.github/workflows/`,
   making the "reject on missing / draft / tampered spec" completion criterion
   automated instead of a manual repro.

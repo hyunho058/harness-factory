@@ -66,37 +66,62 @@ set against what is actually on disk:
 
 ### 2b. Per-section change detection (the regenerate-vs-preserve key)
 
-For each artifact that is **present in both** spec and disk, decide whether its
-*source section* changed. The comparison key is the corresponding spec section
-rendered to its canonical generated form, compared against the artifact's
-**structural** content on disk:
+For each artifact **present in both** spec and disk, decide whether its *source
+section* changed **since the last build** — deterministically, via the provenance
+marker build stamps into every artifact.
 
-- **Agent** `<name>` → its block in `## Agents` (the 5 fields: name, role,
-  responsibility, allowed-tools, model). Compare those fields against the agent
-  file's declared structure (its tool grant, declared role/responsibility, model).
-- **Skill** `<name>` → its block in `## Skills` (name, purpose, owner-agent) plus
-  whether its declared path in `## File Layout` still matches.
-- **Orchestrator / CLAUDE.md** → `## Execution Mode` + `## Invariants/Gates` +
-  `## Escalation Rules`.
+**The provenance marker.** At generation time (Phases 3–5) build embeds, in each
+artifact, an HTML comment recording the sha256 of the spec section that produced
+it:
 
-Result per artifact:
+```
+<!-- generated-from: <selector> @ sha256:<digest> -->
+```
 
-- **section unchanged** → **PRESERVE**: do not touch the file. (This is the common
-  case on a re-run where the human only edited one agent's spec block.)
-- **section changed** → **UPDATE**: regenerate *this* artifact's structure from the
-  new spec section — and *only* this one. Do not regenerate artifacts whose
-  sections did not change.
+The digest comes from the shared **`scripts/section-checksum.sh`**, which
+extracts one section and hashes it through the *exact same* normalization as the
+whole-spec gate (`checksum.sh`) — so a false mismatch between stamp-time and
+compare-time is structurally 0, just as it is for the gate. Selectors:
 
-> The key is intentionally **section-granular**, not file-granular or
-> harness-granular. Changing one agent's allowed-tools in the spec re-renders that
-> one agent, not the whole team. This is the literal reading of D6's "regenerate
-> only the agents/skills whose corresponding spec section changed".
+- **Agent** `<name>` → `agent:<name>` (its `### <name>` block under `## Agents`).
+- **Skill** `<name>` → `skill:<name>` (its `### <name>` block under `## Skills`).
+- **Orchestrator / CLAUDE.md** → `orchestrator` (`## Execution Mode` +
+  `## Invariants/Gates` + `## Escalation Rules`, concatenated in that fixed order).
 
-There is no stored prior-spec snapshot to diff against; the on-disk artifact *is*
-the record of the last build. So "did the section change?" is answered by asking
-"does the on-disk artifact's structure still match what this spec section would
-generate?" — if yes, it is unchanged (PRESERVE); if no, regenerate the structure
-(UPDATE), applying the body rule in Step 3.
+**The decision.** Read the marker's stored digest, recompute the section's current
+digest, and branch:
+
+| Marker | stored vs. recomputed | Result |
+|--------|-----------------------|--------|
+| present | **equal** | **PRESERVE** — the spec section is byte-identical to what produced this artifact; do not touch it. (The common re-run case where the human edited only one agent's spec block.) |
+| present | **differ** | **UPDATE** — regenerate *this* artifact's structure from the new spec section (Step 3's structure/body rules), then **re-stamp** the marker with the new digest. Only this one artifact; sections whose digest is unchanged are not touched. |
+| **absent** (pre-marker artifact, first re-run after this shipped) | — | **migration fallback** — decide UPDATE/PRESERVE by the deterministic *structural* comparison only: compare the spec's structural fields (allowed-tools, model, owner-agent, execution mode) against the artifact's declared structure. Never re-render prose to decide. Equal → PRESERVE, differ → UPDATE per Step 3. Either way, **stamp** the current digest so every later run is marker-driven. |
+
+> The key is intentionally **section-granular**, not file- or harness-granular.
+> Changing one agent's allowed-tools in the spec re-renders that one agent, not
+> the whole team — the literal reading of D6's "regenerate only the agents/skills
+> whose corresponding spec section changed".
+
+**Why the marker, and not "does the artifact still match what this section would
+generate?"** That older test had no stored prior-spec snapshot — the on-disk
+artifact *was* the only record — so it re-derived what the section "would
+generate" and diffed. For **structural** fields that is a fine mechanical compare,
+but the same test was applied to **prose** fields (role, responsibility) that
+build renders with an LLM. The same unchanged section renders different sentences
+each run, so an untouched agent read as "changed" and was mis-classified UPDATE,
+eroding R5.3 ("update only what changed") and R5.5's preserve promise.
+
+The marker fixes this by **separating two questions the old test conflated**:
+
+- **Q1 — did the SPEC section change since the last build?** → the stored vs.
+  recomputed digest above. Now **deterministic**; no LLM in the loop.
+- **Q2 — did the HUMAN edit the artifact?** → the structure-vs-body precedence in
+  Step 3. LLM judgment is confined here, where it belongs.
+
+The marker is **build-owned metadata**: it lives in the artifact, never in
+`design.md`, so it does not affect the spec checksum gate (G3) and R5.4 (checksum
+scope = spec only) is unchanged. Exclude the marker line itself from body
+comparison/preservation — it is not human prose, and it is re-stamped on UPDATE.
 
 ---
 
@@ -187,9 +212,15 @@ human-owned body.
 
 After merging, report the per-artifact disposition so the re-run is auditable:
 
-- **Created:** spec items that were absent on disk.
-- **Updated:** artifacts whose spec section changed (structure corrected to spec).
-- **Preserved:** artifacts left untouched (section unchanged).
+- **Created:** spec items that were absent on disk (marker stamped).
+- **Updated:** artifacts whose spec-section digest changed (structure corrected to
+  spec; provenance marker re-stamped with the new digest).
+- **Preserved:** artifacts whose spec-section digest matched the stored marker
+  (left untouched).
+- **Migrated:** pre-marker artifacts that had no `generated-from` marker — decided
+  by the structural fallback and back-stamped with the current digest (so the next
+  re-run is fully marker-driven). Report the count; it should be 0 on every run
+  after the first re-run.
 - **Warnings:**
   - body divergences preserved (human edits kept; output ≠ clean spec render),
   - EXTRA artifacts on disk not in the spec (left in place),
