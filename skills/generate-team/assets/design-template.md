@@ -7,7 +7,15 @@ checksum:
 <!-- This is a fillable instance of references/design-schema.md.
      `design` copies it to specs/<team>/design.md and fills every placeholder.
      Leave status: draft and checksum empty — scripts/approve sets both.
-     Delete these guidance comments as you fill each section. -->
+     Delete these guidance comments as you fill each section.
+
+     CONTRACT NOTE (for editors of this template, not for fillers): the H2
+     section names and the agent/skill field names below are a contract shared
+     with TWO other places — references/design-schema.md ("Body sections" + the
+     §3/§4 field tables) and scripts/approve (its SECTION_AGENTS / SECTION_SKILLS
+     vars, enforced by scripts/validate.sh). Renaming a section or field here
+     means editing all three. -->
+
 
 ## Purpose
 

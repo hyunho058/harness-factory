@@ -140,7 +140,18 @@ The gate proved the spec is *authorized*. Now confirm it is *well-formed*, then
 parse it. **Do not ask the user anything** — the spec is the only input (R5.1).
 
 1. **Read** `specs/<team>/design.md` in full.
-2. **Structural validation** — run the schema's validation checklist from
+2. **Structural validation** — assert the spec is well-formed on the consumer
+   side too. First run the **shared** deterministic validator (the same one
+   `scripts/approve` runs before it freezes, so structure is asserted on both
+   producer and consumer sides):
+
+   ```sh
+   "${CLAUDE_PLUGIN_ROOT}/skills/generate-team/scripts/validate.sh" specs/<team>/design.md
+   ```
+
+   Exit 0 = structurally valid → continue. Non-zero → it lists every problem on
+   stderr; **reject**, print those diagnostics, and tell the user to fix the spec
+   and re-approve. Then confirm the same checks via the schema's checklist from
    [`../generate-team/references/design-schema.md`](../generate-team/references/design-schema.md)
    ("Validation checklist (build runs this before generating)"):
    - Frontmatter has `team`, `status`, `checksum`.

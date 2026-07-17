@@ -11,7 +11,8 @@ form of the contract implemented by
 > it). **Never hand-roll hashing** in approve or build. If both sides call the
 > same script, a *false* mismatch (the two sides disagreeing on a spec that
 > nobody actually changed) is structurally impossible — that zero is the whole
-> point (spec Constraints "체크섬 정규화", D3, R3.2, R4.3).
+> point (see `specs/gated-team-generation/spec.md` — its Constraints
+> "체크섬 정규화", §D3, §R3.2, §R4.3).
 
 ## Usage
 

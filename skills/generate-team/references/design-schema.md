@@ -2,8 +2,18 @@
 
 The single source of truth for the `design`↔`build` handoff. `design` (producer)
 fills this schema into `specs/<team>/design.md`; `build` (consumer) reads it as its
-**only** input. Keep the two sides in lockstep — if a field changes here, both
-commands change with it.
+**only** input.
+
+> **Keep the contract in lockstep — it lives in THREE places, not two.** The
+> section names and field names below are duplicated by:
+> 1. this schema (the human-readable contract);
+> 2. `assets/design-template.md` (the fillable instance `design` copies); and
+> 3. `scripts/approve` — the `SECTION_AGENTS` / `SECTION_SKILLS` vars it counts,
+>    plus `scripts/validate.sh`, which asserts these sections/fields EXIST.
+>
+> If you rename a section (e.g. `## Agents`) or change a required field, edit ALL
+> THREE. A rename that misses `approve` no longer silently zeroes its counter —
+> `validate.sh` (run by both `approve` and `build`) now fails loudly instead.
 
 A design.md is a Markdown file: a YAML frontmatter block followed by 8 required
 body sections. Nothing in `build` is interview-derived — every generated artifact

@@ -11,8 +11,14 @@
 #
 #   The digest is produced by the SIBLING `checksum.sh` — the ONE shared script
 #   the consumer (`build`) also calls — so a false approve↔build mismatch on an
-#   unchanged spec is structurally 0. NEVER hand-roll hashing here (spec D3,
-#   R3.1, R3.2, R3.3; Constraints "체크섬 정규화").
+#   unchanged spec is structurally 0. NEVER hand-roll hashing here (see
+#   specs/gated-team-generation/spec.md §D3, §R3.1, §R3.2, §R3.3, and its
+#   Constraints "체크섬 정규화").
+#
+#   Structure is validated BEFORE anything is frozen: `approve` runs the sibling
+#   `validate.sh` on the spec first and refuses to approve a malformed one, so a
+#   spec that is missing sections/fields or has a dangling owner-agent is caught
+#   at freeze time rather than at build time (fail-fast).
 #
 # USAGE
 #   approve <team>
@@ -33,11 +39,24 @@ set -euo pipefail
 
 err()  { printf '%s\n' "approve: $*" >&2; }
 
-# --- resolve sibling checksum.sh by THIS script's own directory --------------
-# (not by CWD — approve runs from the user's project dir, the script lives in
+# --- resolve sibling scripts by THIS script's own directory ------------------
+# (not by CWD — approve runs from the user's project dir, the scripts live in
 #  the plugin.)
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CHECKSUM="$DIR/checksum.sh"
+VALIDATE="$DIR/validate.sh"
+
+# --- design↔build section-name contract (named once, used at the call sites) -
+# The H2 section names `approve` counts are part of the design.md contract, and
+# the SAME contract also lives in TWO other places:
+#   * references/design-schema.md  ("Body sections")
+#   * assets/design-template.md    (the fillable instance)
+# Renaming a section means editing ALL THREE. These vars hoist the literals out
+# of the count_section_items call sites so the contract is named once here; and
+# validate.sh (run below) asserts these sections EXIST, so a rename now fails
+# LOUDLY at approve time instead of silently zeroing the counter.
+SECTION_AGENTS="Agents"
+SECTION_SKILLS="Skills"
 
 # --- argument validation -----------------------------------------------------
 if [ "$#" -ne 1 ]; then
@@ -60,6 +79,22 @@ fi
 
 if [ ! -x "$CHECKSUM" ]; then
   err "sibling checksum.sh not found or not executable: $CHECKSUM"
+  exit 1
+fi
+if [ ! -x "$VALIDATE" ]; then
+  err "sibling validate.sh not found or not executable: $VALIDATE"
+  exit 1
+fi
+
+# --- validate structure BEFORE any mutation/freezing -------------------------
+# Fail-fast: refuse to approve a structurally invalid spec. validate.sh prints
+# its own diagnostics to stderr and exits non-zero; we add a one-line reason and
+# stop WITHOUT flipping status or writing a checksum. This also fixes the old
+# no-frontmatter false-success bug — validate.sh catches the missing frontmatter
+# first, so approve can no longer print an "Approved … (frozen)" banner for a
+# file it never actually stamped.
+if ! "$VALIDATE" "$design_path"; then
+  err "refusing to approve a structurally invalid spec (fix the problems above, then re-run)"
   exit 1
 fi
 
@@ -116,8 +151,8 @@ count_section_items() {
   ' "$design_path"
 }
 
-agent_count="$(count_section_items "Agents")"
-skill_count="$(count_section_items "Skills")"
+agent_count="$(count_section_items "$SECTION_AGENTS")"
+skill_count="$(count_section_items "$SECTION_SKILLS")"
 
 # --- (1) set status: approved in the frontmatter -----------------------------
 # Operate ONLY inside the leading frontmatter block. Replace the status line in
@@ -129,6 +164,8 @@ awk '
   BEGIN { in_fm = 0; seen_fm = 0; wrote_status = 0 }
   {
     line = $0
+    sub(/\r$/, "", line)       # CRLF-robust: match delimiters on CRLF files
+    sub(/[ \t]*$/, "", line)   # tolerate a stray space after `--- ` (output uses $0)
     if (NR == 1 && line == "---") { in_fm = 1; seen_fm = 1; print; next }
     if (in_fm) {
       if (line == "---") {
@@ -172,6 +209,8 @@ awk -v digest="$digest" '
   BEGIN { in_fm = 0; wrote_ck = 0 }
   {
     line = $0
+    sub(/\r$/, "", line)       # CRLF-robust: match delimiters on CRLF files
+    sub(/[ \t]*$/, "", line)   # tolerate a stray space after `--- ` (output uses $0)
     if (NR == 1 && line == "---") { in_fm = 1; print; next }
     if (in_fm) {
       if (line == "---") {
@@ -195,7 +234,7 @@ awk -v digest="$digest" '
 mv "$tmp" "$design_path"
 trap - EXIT
 
-# --- (3) change summary (R3.3) ----------------------------------------------
+# --- (3) change summary (see specs/gated-team-generation/spec.md §R3.3) ------
 short="${digest:0:12}"
 
 printf '%s\n' "Approved: $team"

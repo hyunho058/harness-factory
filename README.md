@@ -56,7 +56,7 @@ The legacy single-run flow is preserved as an explicit opt-out:
 
 With `--skip-design`, the original Phase 0–6 flow runs in one pass and writes `.claude/*` directly, with no design spec and no approval gate.
 
-Running `/generate-team` **without** `--skip-design` does not silently generate anything — it explains the gated path above and routes you to `/harness-factory:design <team>`. Leave the project description empty to let the skill scan the current working directory automatically.
+Running `/generate-team` **without** `--skip-design` does not silently generate anything. It explains the gated path above and routes you toward `/harness-factory:design <team>` — but first (in Phase -1) it asks, via an in-chat prompt, whether you'd rather take the one-shot escape hatch right now, so you can opt into a single-run build without re-invoking with `--skip-design`. The gated path is the recommended default; a one-shot run happens only if you explicitly choose it. Leave the project description empty to let the skill scan the current working directory automatically.
 
 ## Practical Example: Generating a UI Component Team
 
@@ -119,19 +119,52 @@ All agents use `model: opus` for maximum reasoning quality.
 
 ```
 harness-factory/
+├── .claude-plugin/
+│   ├── plugin.json               # Plugin manifest (name, version)
+│   └── marketplace.json          # Marketplace registration
 ├── commands/
-│   └── generate-team.md          # Slash command entry point
-└── skills/
-    └── generate-team/
-        ├── SKILL.md               # Core skill logic (6-phase workflow)
-        └── references/
-            ├── agent-design-patterns.md   # Architecture patterns and agent separation criteria
-            ├── orchestrator-template.md   # Orchestrator skill template
-            ├── qa-agent-guide.md          # QA agent design guide
-            ├── skill-testing-guide.md     # Skill evaluation and testing guide
-            ├── skill-writing-guide.md     # Skill writing best practices
-            └── team-examples.md           # Complete team example definitions
+│   ├── design.md                 # /harness-factory:design — interview → spec, then stop (gated step 1)
+│   ├── build.md                  # /harness-factory:build — build from the approved spec (gated step 3)
+│   └── generate-team.md          # /harness-factory:generate-team — router (gated by default, --skip-design one-shot)
+├── skills/
+│   ├── team-design/
+│   │   └── SKILL.md              # Producer: interview → specs/<team>/design.md (status: draft); writes no .claude/*
+│   ├── team-build/
+│   │   ├── SKILL.md              # Consumer: gate (exists → approved → checksum) then materialize from spec only
+│   │   └── references/
+│   │       └── merge.md          # Idempotent re-build merge rules (structure = spec wins, prose = preserve-and-warn)
+│   └── generate-team/
+│       ├── SKILL.md              # Core 6-phase logic + Phase -1 router + --skip-design one-shot escape hatch
+│       ├── scripts/
+│       │   ├── approve           # Producer side of the checksum gate — sets status: approved, freezes sha256
+│       │   ├── checksum.sh       # Canonical digest, shared: approve AND build call the SAME script (0 false mismatch)
+│       │   └── validate.sh       # Shared structural validation — approve (pre-freeze) + build (post-gate) [added by improvement work]
+│       ├── assets/
+│       │   └── design-template.md # design.md skeleton emitted by the design phase
+│       └── references/
+│           ├── agent-design-patterns.md   # Architecture patterns and agent separation criteria
+│           ├── checksum-normalization.md  # Checksum normalization rules (cites specs/gated-team-generation/spec.md)
+│           ├── design-schema.md           # design.md schema — the design↔build contract
+│           ├── orchestrator-template.md   # Orchestrator skill template
+│           ├── qa-agent-guide.md          # QA agent design guide
+│           ├── skill-testing-guide.md     # Skill evaluation and testing guide
+│           ├── skill-writing-guide.md     # Skill writing best practices
+│           └── team-examples.md           # Complete team example definitions
+├── specs/
+│   └── gated-team-generation/
+│       └── spec.md               # Design ledger (D1–D6 rationale) — where the script/reference citations resolve
+├── tests/                        # Gate regression tests (approve/checksum/reject scenarios) [added by improvement work]
+├── .github/
+│   └── workflows/                # CI running the gate tests [added by improvement work]
+└── plugins/
+    └── harness-factory -> ../    # Self-referential symlink to the repo root (see the Compatibility note below)
 ```
+
+> Entries marked *[added by improvement work]* (`validate.sh`, `tests/`, `.github/workflows/`) land alongside this documentation refresh. `specs/` is otherwise git-ignored; only `specs/gated-team-generation/` is tracked, so the citations in the scripts and references stay resolvable for installed users.
+
+### Compatibility note — the `plugins/harness-factory` symlink
+
+`plugins/harness-factory` is a **self-referential symlink** pointing at the repository root (`-> ../`). It lets the plugin resolve under a `plugins/<name>` path without duplicating any files. Symlinks can be fragile on **Windows** checkouts: Git only materializes them when symlink support is enabled (`git config core.symlinks true`, plus OS-level permission such as Developer Mode). Windows users who see a plain text file where the link should be may need to enable symlink support and re-checkout. Do **not** delete the symlink — it is intentional.
 
 ## harness-ops integration
 
