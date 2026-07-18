@@ -1,0 +1,20 @@
+name: gate
+
+# Regression protection for the checksum gate (approve / checksum.sh / validate.sh).
+# The ubuntu-latest runner has `sha256sum` (Linux) but not `shasum` (macOS); the
+# scripts fall back to `sha256sum`, so this run also validates the cross-platform
+# normalization (test 4) for real, not just in theory.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run gate test suite
+        run: bash tests/gate_test.sh

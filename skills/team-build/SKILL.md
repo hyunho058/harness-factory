@@ -140,7 +140,18 @@ The gate proved the spec is *authorized*. Now confirm it is *well-formed*, then
 parse it. **Do not ask the user anything** — the spec is the only input (R5.1).
 
 1. **Read** `specs/<team>/design.md` in full.
-2. **Structural validation** — run the schema's validation checklist from
+2. **Structural validation** — assert the spec is well-formed on the consumer
+   side too. First run the **shared** deterministic validator (the same one
+   `scripts/approve` runs before it freezes, so structure is asserted on both
+   producer and consumer sides):
+
+   ```sh
+   "${CLAUDE_PLUGIN_ROOT}/skills/generate-team/scripts/validate.sh" specs/<team>/design.md
+   ```
+
+   Exit 0 = structurally valid → continue. Non-zero → it lists every problem on
+   stderr; **reject**, print those diagnostics, and tell the user to fix the spec
+   and re-approve. Then confirm the same checks via the schema's checklist from
    [`../generate-team/references/design-schema.md`](../generate-team/references/design-schema.md)
    ("Validation checklist (build runs this before generating)"):
    - Frontmatter has `team`, `status`, `checksum`.
@@ -185,6 +196,31 @@ interview answers.** Where Phase 3/4/5 say "decide X" or "ask the user", instead
 **read X from the corresponding spec section**. Every generated artifact must
 trace back to a field in `design.md` (D5 — near-lossless serialization).
 
+### Provenance marker — stamp every generated artifact (D6 / R5.3 determinism)
+
+Every artifact this build writes MUST carry a **provenance marker** recording the
+sha256 of the exact spec section that produced it. This is what makes the next
+re-run's PRESERVE/UPDATE decision deterministic (Phase 0-M) instead of an LLM
+re-render comparison. Compute the digest with the shared section hasher:
+
+```sh
+"${CLAUDE_PLUGIN_ROOT}/skills/generate-team/scripts/section-checksum.sh" specs/<team>/design.md <selector>
+```
+
+and embed the marker as an HTML comment immediately **after** the artifact's
+frontmatter (or on **line 1** of `CLAUDE.md`, which has no frontmatter):
+
+```
+<!-- generated-from: <selector> @ sha256:<digest> -->
+```
+
+Selectors: `agent:<name>`, `skill:<name>`, `orchestrator` (the last covers
+`## Execution Mode` + `## Invariants/Gates` + `## Escalation Rules`, and is
+stamped on **both** the orchestrator skill and `CLAUDE.md`). The marker is
+**build-owned metadata**: it lives in the artifact, never in `design.md`, so it
+does NOT affect the spec checksum gate (G3 / R5.4). Never treat the marker line
+as human prose — on an UPDATE, **re-stamp** it with the new digest.
+
 ### Phase 3 — Agent definitions (from `## Agents`)
 
 For each agent entry, write `.claude/agents/<name>.md` following generate-team
@@ -199,6 +235,9 @@ Create the definition **file** for every agent — even built-in types
 (`general-purpose`, `Explore`, `Plan`) get a definition file (Phase 3 rule). Add
 the `## Team Communication Protocol` section when `## Execution Mode` is `team`.
 
+**Stamp the provenance marker** (see above) after the frontmatter of each agent
+file: `<!-- generated-from: agent:<name> @ sha256:<section-checksum.sh output> -->`.
+
 ### Phase 4 — Skills (from `## Skills`)
 
 For each skill entry, write `.claude/skills/<name>/SKILL.md` following
@@ -207,6 +246,9 @@ disclosure to `references/`). Wire ownership: the SKILL.md states its
 **owner-agent** (already integrity-checked in Phase 0) so the agent↔skill
 connection is explicit.
 
+**Stamp the provenance marker** after the frontmatter of each SKILL.md:
+`<!-- generated-from: skill:<name> @ sha256:<section-checksum.sh output> -->`.
+
 ### Phase 5 — Orchestrator + CLAUDE.md (from Execution Mode / Invariants / Escalation)
 
 Following generate-team Phase 5:
@@ -214,6 +256,14 @@ Following generate-team Phase 5:
 - Build the orchestrator skill in the shape dictated by `## Execution Mode`
   (team → `TeamCreate`/`TaskCreate` self-coordination; sub → `Agent` fan-out;
   hybrid → per-phase modes).
+  - **Team-mode primitive note:** when `## Execution Mode` is `team`, the
+    orchestrator uses `TeamCreate`/`SendMessage`/`TaskCreate` — primitives not
+    present in every Claude Code version/session. Materialize the mode the spec
+    declares (do **not** silently change it), but have the generated orchestrator
+    state the requirement and name `Agent` sub-agent fan-out as the run-time
+    fallback if the primitives are absent. See
+    [`../generate-team/references/agent-design-patterns.md`](../generate-team/references/agent-design-patterns.md)
+    → "Execution Modes".
 - Materialize `## Invariants/Gates` and `## Escalation Rules` into the
   orchestrator's gate/error-handling logic so the team actually enforces them.
 - Write the **CLAUDE.md harness pointer** (generate-team 5-4 template): trigger
@@ -221,6 +271,10 @@ Following generate-team Phase 5:
   directory tree into CLAUDE.md (it drifts; the orchestrator + `.claude/` own
   that). Seed the change-history table with the initial build row
   (`<today> | Initial build from approved spec | All | —`).
+
+**Stamp the provenance marker** with the `orchestrator` selector on **both** the
+orchestrator skill (after its frontmatter) and `CLAUDE.md` (**line 1**):
+`<!-- generated-from: orchestrator @ sha256:<section-checksum.sh output> -->`.
 
 ### File Layout is the authority on paths
 
@@ -278,20 +332,37 @@ Decide create / update / preserve **per artifact** from two section-level diffs:
    - in spec, **not** on disk → **CREATE** (spec adds it).
    - on disk, **not** in spec → **EXTRA** — never delete; warn (see merge ref).
    - in both → candidate for update-or-preserve (next).
-2. **Per-section change** — for each artifact present in both, compare its source
-   spec section to the artifact's on-disk **structure**:
-   - **Agent** → its `## Agents` block (name, role, responsibility, allowed-tools,
-     model).
-   - **Skill** → its `## Skills` block (name, purpose, owner-agent) + declared path.
-   - **Orchestrator / CLAUDE.md** → `## Execution Mode` + `## Invariants/Gates` +
-     `## Escalation Rules`.
+2. **Per-section change (deterministic via the provenance marker)** — for each
+   artifact present in both, read the `<!-- generated-from: <selector> @
+   sha256:<stored> -->` marker build stamped last time, and RECOMPUTE the current
+   digest of that spec section with the shared hasher:
 
-   Section **unchanged** → **PRESERVE** (do not touch the file). Section
-   **changed** → **UPDATE** only that one artifact. The key is **section-granular**:
-   changing one agent's allowed-tools re-renders that one agent, not the team.
-   There is no stored prior-spec snapshot — the on-disk artifact *is* the record of
-   the last build, so "did it change?" = "does the artifact's structure still match
-   what this spec section would generate?".
+   ```sh
+   "${CLAUDE_PLUGIN_ROOT}/skills/generate-team/scripts/section-checksum.sh" specs/<team>/design.md <selector>
+   ```
+
+   Selector per artifact: `agent:<name>`, `skill:<name>`, `orchestrator`
+   (Execution Mode + Invariants/Gates + Escalation Rules → orchestrator skill +
+   CLAUDE.md).
+
+   | Marker | stored vs recomputed | Decision |
+   |--------|----------------------|----------|
+   | present | **equal** | **PRESERVE** — the spec section is byte-identical to what produced this artifact; do not touch it. |
+   | present | **differ** | **UPDATE** only this artifact (structure → spec wins, body preserved per below), then **re-stamp** the new digest. |
+   | **absent** (pre-marker artifact) | — | **migration fallback:** decide by comparing only the spec's *structural* fields (allowed-tools, model, owner-agent, execution mode) against the artifact's declared structure — a mechanical compare, never a prose re-render. Equal → PRESERVE, differ → UPDATE (structure → spec wins, body preserved). Either way **stamp** the current digest so every later run is marker-driven. |
+
+   This is **section-granular**: changing one agent's spec block re-renders that
+   one agent, not the team. It replaces the old "does the artifact still match what
+   this section would generate?" test — which, because build renders prose fields
+   (role/responsibility) with an LLM, was non-deterministic and mis-classified
+   untouched agents as UPDATE. The marker separates **Q1 "did the SPEC section
+   change?"** (this deterministic hash) from **Q2 "did the HUMAN edit the
+   artifact?"** (the structure-vs-body precedence below).
+
+   > The marker records a **spec-section** digest and lives in the artifact, not in
+   > `design.md` — so it never affects the checksum gate (G3) and R5.4 (checksum
+   > scope = spec only) is unchanged. Exclude the marker line from body
+   > preservation; it is build-owned metadata, re-stamped on every UPDATE.
 
 ### Merge precedence on divergence (R5.5)
 

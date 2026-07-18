@@ -2,8 +2,18 @@
 
 The single source of truth for the `design`↔`build` handoff. `design` (producer)
 fills this schema into `specs/<team>/design.md`; `build` (consumer) reads it as its
-**only** input. Keep the two sides in lockstep — if a field changes here, both
-commands change with it.
+**only** input.
+
+> **Keep the contract in lockstep — it lives in THREE places, not two.** The
+> section names and field names below are duplicated by:
+> 1. this schema (the human-readable contract);
+> 2. `assets/design-template.md` (the fillable instance `design` copies); and
+> 3. `scripts/approve` — the `SECTION_AGENTS` / `SECTION_SKILLS` vars it counts,
+>    plus `scripts/validate.sh`, which asserts these sections/fields EXIST.
+>
+> If you rename a section (e.g. `## Agents`) or change a required field, edit ALL
+> THREE. A rename that misses `approve` no longer silently zeroes its counter —
+> `validate.sh` (run by both `approve` and `build`) now fails loudly instead.
 
 A design.md is a Markdown file: a YAML frontmatter block followed by 8 required
 body sections. Nothing in `build` is interview-derived — every generated artifact
@@ -89,6 +99,12 @@ a schema violation — build rejects it.
 How the agents run together: `team`, `sub` (subagent fan-out), or `hybrid`. State
 the orchestration pattern. (Adding *new* modes is out of scope for this schema.)
 
+> **Primitive availability.** `team` depends on `TeamCreate` / `TeamDelete` /
+> `SendMessage` / `TaskCreate`, which are not present in every Claude Code version
+> or session. If the target environment lacks them — or you are unsure — declare
+> `sub`; it uses only the always-available `Agent` tool. See
+> `orchestrator-template.md` and `agent-design-patterns.md` → "Execution Modes".
+
 ### 6. `## Invariants/Gates`
 
 **This is the point of the gate.** Record the invariants the generated team
@@ -139,3 +155,10 @@ validates the *shape* of an approved spec; the gate validates its *authority*.
 
 - `assets/design-template.md` — fillable instance `design` copies and fills.
 - `scripts/checksum.sh` — shared normalization for approve (freeze) and build (verify).
+- `scripts/section-checksum.sh` — per-section digest (reuses `checksum.sh`). At
+  build time each generated artifact is stamped with a provenance marker
+  `<!-- generated-from: <selector> @ sha256:… -->` recording the digest of the
+  spec section it came from; on a re-build that marker makes the
+  preserve-vs-regenerate decision deterministic (see
+  `../../team-build/references/merge.md`). The marker lives in the artifact, not
+  in this spec, so it never affects the checksum gate (R5.4).

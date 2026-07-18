@@ -12,6 +12,14 @@ The orchestrator is the top-level skill that coordinates the entire team. Three 
 
 **The first mode to consider** when 2+ agents collaborate. Use `TeamCreate` to form the team and coordinate via shared task list and `SendMessage`.
 
+> **Prerequisite — team primitives.** This template uses `TeamCreate` /
+> `TeamDelete` / `SendMessage` / `TaskCreate`, which are **not present in every
+> Claude Code version or session**. Confirm `TeamCreate` is exposed in the target
+> environment before generating a team orchestrator. **If it is unavailable, use
+> Template B (Sub-agent)** — it relies only on the always-available `Agent` tool
+> and is the safe fallback. See `agent-design-patterns.md` → "Execution Modes" for
+> the full rule (do not flip the project default to sub without measuring first).
+
 ```markdown
 ---
 name: {domain}-orchestrator

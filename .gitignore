@@ -8,5 +8,13 @@
 *.swo
 
 # Project Specific
-specs/
+# Ignore all of specs/ EXCEPT the canonical design ledger. The gated flow's
+# scripts and references cite specs/gated-team-generation/spec.md (e.g. "spec D3"),
+# so that one design directory MUST ship with the plugin for installed users to
+# resolve those pointers; everything else under specs/ stays private.
+# NOTE: match specs/* (contents), not specs/ (the whole dir) — git cannot
+# re-include a path whose parent directory is itself excluded.
+specs/*
+!specs/gated-team-generation/
+!specs/gated-team-generation/**
 .env

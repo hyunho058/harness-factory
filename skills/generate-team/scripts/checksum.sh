@@ -9,9 +9,9 @@
 #   the checksum before generating output) call IDENTICALLY. Because both sides
 #   run the exact same bytes through the exact same normalization, a *false*
 #   mismatch (approve↔build disagreeing on an unchanged spec) is structurally 0.
-#   That zero is the invariant this script exists to guarantee (spec Constraints
-#   "체크섬 정규화", D3, R3.2, R4.3). Never hand-roll hashing in approve/build —
-#   call this script.
+#   That zero is the invariant this script exists to guarantee (see
+#   specs/gated-team-generation/spec.md — its Constraints "체크섬 정규화", §D3,
+#   §R3.2, §R4.3). Never hand-roll hashing in approve/build — call this script.
 #
 # USAGE
 #   checksum.sh <path-to-design.md>
@@ -79,18 +79,26 @@ sha256_hex() {
 #         frontmatter are never touched, so a body line that happens to start
 #         with "status:" is preserved.
 # Step 4: strip a trailing CR (\r) and any other trailing whitespace per line.
+#         Done INSIDE awk, BEFORE the `---` delimiter compare, so a `--- ` line
+#         with a stray trailing space still opens/closes the frontmatter block.
+#         Otherwise the block would go undetected, its status:/checksum: lines
+#         would stop being excluded, and the digest would shift — a cross-platform
+#         false mismatch (exactly the "0 false mismatch" invariant this guards).
 #
-# awk does the frontmatter-scoped deletion; sed does the per-line trailing
-# whitespace/CR strip. The pipeline emits LF-terminated lines (awk/sed both
-# write \n), satisfying the LF normalization.
+# awk does the frontmatter-scoped deletion AND the per-line trailing whitespace/CR
+# strip; the trailing sed re-applies the strip harmlessly as a safety net. The
+# pipeline emits LF-terminated lines (awk/sed both write \n), satisfying LF
+# normalization.
 normalized="$(
   awk '
     BEGIN { in_fm = 0; fm_done = 0 }
     {
-      # strip a trailing CR up front so frontmatter delimiter matching is
-      # robust against CRLF files.
+      # strip a trailing CR AND trailing whitespace up front so frontmatter
+      # delimiter matching is robust against CRLF files and a stray space after
+      # a `---` line.
       line = $0
       sub(/\r$/, "", line)
+      sub(/[ \t]*$/, "", line)
 
       if (NR == 1 && line == "---") { in_fm = 1; print line; next }
 

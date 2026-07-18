@@ -4,6 +4,20 @@
 
 Understand the key differences between the two execution modes and choose the appropriate one.
 
+> **Primitive availability comes first (target-environment check).** Agent-team
+> mode is built on `TeamCreate` / `TeamDelete` / `SendMessage` / `TaskCreate`.
+> Those primitives are **not present in every Claude Code version or session** —
+> availability can depend on the version and on whether FleetView is enabled.
+> Sub-agent mode uses only the `Agent` tool, which is **always available**. So
+> treat "are the team primitives exposed in the target environment?" as the
+> **first** gate of the decision tree below: if `TeamCreate` is not available,
+> choose **Sub-agent** regardless of collaboration needs — it is the safe fallback
+> and the orchestrator is still correct, just without live inter-agent messaging.
+> Team remains the preferred mode *where the primitives exist*. Do **not** globally
+> redefine the default to Sub-agent without first **measuring** primitive
+> availability in the target Claude Code version; team is genuinely better where it
+> is available.
+
 ### Agent Teams — Default Mode
 
 The team leader uses `TeamCreate` to form a team, and members run as independent Claude Code instances. Members communicate directly via `SendMessage` and self-coordinate using a shared task list (`TaskCreate`/`TaskUpdate`).
@@ -62,16 +76,19 @@ The main agent creates sub-agents using the `Agent` tool. Sub-agents return resu
 ### Mode Selection Decision Tree
 
 ```
-2 or more agents?
-├── Yes → Do agents need to communicate?
-│         ├── Yes → Agent team (default)
-│         │         Cross-validation, shared findings, real-time feedback improve quality.
-│         │
-│         └── No → Sub-agents also viable
-│                  For produce-verify, expert pools where only result passing is needed.
+Team primitives (TeamCreate/SendMessage/TaskCreate) available in the target env?
+├── No → Sub-agent  (only the always-available Agent tool; safe fallback)
 │
-└── No (1 agent) → Sub-agent
-                   No need for team setup with a single agent.
+└── Yes → 2 or more agents?
+          ├── Yes → Do agents need to communicate?
+          │         ├── Yes → Agent team (default)
+          │         │         Cross-validation, shared findings, real-time feedback improve quality.
+          │         │
+          │         └── No → Sub-agents also viable
+          │                  For produce-verify, expert pools where only result passing is needed.
+          │
+          └── No (1 agent) → Sub-agent
+                             No need for team setup with a single agent.
 ```
 
 > **Core principle:** Agent teams are the default. When choosing sub-agents, ask: "Is inter-member communication truly unnecessary?"
